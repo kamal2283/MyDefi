@@ -1,0 +1,166 @@
+// SPDX-License-Identifier:MIT
+
+pragma solidity ^0.8.0;
+
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
+
+contract TokenFarm is Ownable {
+    // mapping token address -> staker address -> amount
+
+    mapping(address => mapping(address => uint256)) public stakingBalance;
+    //☝ mapping of token address which is mapped to another mapping of user add which than mapped to uint256
+    mapping(address => uint256) public uniqueTokensStaked;
+    mapping(address => address) public tokenPriceFeedMapping; //this is gonna map the token to the associated pricefeeds
+    address[] public stakers;
+    address[] public allowedTokens;
+    IERC20 public dappToken; // we are storing dapp token as global variable
+
+    // now if somebody stake tokens so we have to update list so we wanna make sure that they are already added if they are not on list
+
+    // stakeTokens - Done!
+    // unStakeTokens
+    // issueTokens - Done!
+    // addAllowedTokens - Done!
+    // getEthValue - Done!
+
+    // 100 ETH 1:1 for every 1 Eth, we give 1 DappToken
+    // 50 ETH and 50 DAI staked, and we want to give a reward of 1 DAPP/ 1 DAI
+
+    constructor(address _dappTokenAddress) public {
+        dappToken = IERC20(_dappTokenAddress);
+    }
+
+    function setPriceFeedContract(address _token, address _priceFeed)
+        public
+        onlyOwner
+    {
+        tokenPriceFeedMapping[_token] = _priceFeed;
+    }
+
+    function issueTokens() public onlyOwner {
+        // Issue tokens to all stakers
+        for (
+            uint256 stakersIndex = 0;
+            stakersIndex < stakers.length;
+            stakersIndex++
+        ) {
+            address recipient = stakers[stakersIndex];
+            uint256 userTotalValue = getUserTotalValue(recipient);
+            dappToken.transfer(recipient, userTotalValue);
+            // send them a token reward
+            // dappToken.transfer(recipient,) // we can call transfer here because our dapp token address actually calls all this dapp tokens
+            // bsed on their total value locked
+        }
+    }
+
+    function getUserTotalValue(address _user) public view returns (uint256) {
+        uint256 totalValue = 0;
+        require(uniqueTokensStaked[_user] > 0, "No tokens staked!"); // if this is true than we are gonna loop thorough the allowed tokens and find how much user has allowed tokens
+        for (
+            uint256 allowedTokensIndex = 0;
+            allowedTokensIndex < allowedTokens.length;
+            allowedTokensIndex++
+        ) {
+            totalValue =
+                totalValue +
+                getUserSingleTokenValue(
+                    _user,
+                    allowedTokens[allowdTokensIndex]
+                );
+        }
+        return totalValue;
+    }
+
+    function getUserSingleTokenValue(address _user, address _token)
+        public
+        view
+        returns (uint256)
+    {
+        if (uniqueTokensStaked[_user] <= 0) {
+            return 0;
+        }
+        // price of the token * stakingBalance[_token][user]
+
+        (uint256 price, uint256 decimals) = getTokenValue(_token);
+        return // 10000000000000000000 ETH
+        // ETH/USD -> 10000000000
+        // 10 * 100 = 1,000
+
+        ((stakingBalance[_token][_user] * price) / 10**decimals);
+        // 1 ETH, -> $2,000
+        // 2000
+        // 200 DAI -> $200
+    }
+
+    function getTokenValue(address _token)
+        public
+        view
+        returns (uint256, uint256)
+    {
+        // we need chain link chain link pice feeds for the pricing info
+        // privceFeedAddress
+        address priceFeedAddress = tokenPriceFeedMapping[_token];
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(
+            priceFeedAddress
+        );
+        (, int256 price, , , ) = priceFeed.latestRoundData();
+        uint256 decimals = uint256(priceFeed.decimals()); // since decimals actually return uint
+        return (uint256(price), decimals);
+    }
+
+    function stakeTokens(uint256 _amount, address _token) public {
+        // what tokens can they stake?
+        // how much can they stake?
+        require(_amount > 0, "Amount must be mote than 0");
+        require(tokenIsAllowed(_token), "Token is currently not allowed");
+        IERC20(_token).transferFrom(msg.sender, address(this), _amount);
+        updateUniqueTokensStaked(msg.sender, _token);
+        // if the user has unique token they are already been added to list
+        stakingBalance[_token][msg.sender] =
+            stakingBalance[_token][msg.sender] +
+            _amount; //staking balance of token from msg.sender = their balance + amount
+        if (uniqueTokensStaked[msg.sender] == 1) {
+            stakers.push(msg.sender);
+        }
+        // now if
+        // transferFrom
+        // transfer only works when it is called from the wallet who owns the function/coin
+        // so if we don't own the wallet we need to call transferfrom function
+    }
+
+    function unstakeTokens(address _token) public {
+        uint256 balance = stakingBalance[_token][msg.sender];
+        require(balance > 0, "Staking balance cannot be 0");
+        IERC20(_token).transfer(msg.sender, balance);
+        stakingBalance[_token][msg.sender] = 0;
+        uniqueTokensStaked[msg.sender] = uniqueTokensStaked[msg.sender] - 1;
+    }
+
+    function updateUniqueTokensStaked(address user, address _token) internal {
+        if (stakingBalance[_token][_user] <= 0) {
+            uniqueTokensStaked[_user] = uniqueTokensStaked[_user] + 1;
+        }
+    }
+
+    function addAllowedTokens(address _token) public onlyOwner {
+        //we wnat only ownerto push the tokens
+        allowedTokens.push(_token);
+    }
+
+    function tokenIsAllowed(address _token) public returns (bool) {
+        //it will take token address and by bool it'll check that the token address is true or not
+        for (
+            uint256 allowedTokensIndex = 0;
+            allowedTokensIndex < allowedTokens.length;
+            allowedTokensIndex++
+        ) {
+            if (allowedTokens[allowedTokensIndex] == _token) {
+                //looping tokens to find the specific token
+                return true;
+            }
+        }
+        return false;
+    }
+}
